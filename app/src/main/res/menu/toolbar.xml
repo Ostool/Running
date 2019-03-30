@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/set_one"
+        android:icon="@drawable/share_png"
+        android:title="设置一"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/set_two"
+        android:icon="@drawable/help_png"
+        android:title="设置二"
+        app:showAsAction="never" />
+</menu>
