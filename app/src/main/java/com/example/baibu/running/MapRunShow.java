@@ -70,16 +70,19 @@ public class MapRunShow extends AppCompatActivity {
 
     private Button startButton;
     private Button stopButton;
+    private Button turnToMap;
     private static BitmapDescriptor realTimeBitmap = null;
     private boolean isFirstLoc = true;
     private boolean isFirstTra = true;
+    private boolean isFirstTurn =true;
+
     private int tag = 1;
     private Trace trace;
     private RefreshThread refreshThread;
     private OnTraceListener onTraceListener;
     private long serviceId = 210523;
-    private int gatherInterval = 2;
-    private int packInterval = 3 ;
+    private int gatherInterval = 1;
+    private int packInterval = 1 ;
     private String entityName = null;
     private boolean isNeedStorage = false;
     private LBSTraceClient traceClient;
@@ -91,16 +94,7 @@ public class MapRunShow extends AppCompatActivity {
     private LocRequest locRequest = null;
     private List<String> permissionList;
 
-    //重写地图活动的返回键方法，点击返回上一个活动，并不会销毁当前活动
-    @Override
-    public void onBackPressed() {
-        super.onBackPressed();
-        Intent intent = new Intent();
-        intent.setClass(this, MainActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);//设置不要刷新将要跳到的界面
-        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);//它可以关掉所要到的界面中间的activity
-        startActivity(intent);
-    }
+
 
 
 
@@ -131,7 +125,7 @@ public class MapRunShow extends AppCompatActivity {
         init();
         initOnEntityListener();
         initOnStartTraceListener();
-        traceClient.startTrace(trace, onTraceListener);
+
     }
 
 
@@ -195,6 +189,8 @@ public class MapRunShow extends AppCompatActivity {
         startButton = (Button) layout.findViewById(R.id.start_button);
         //结束轨迹记录按钮
         stopButton = (Button) layout.findViewById(R.id.over_button);
+        turnToMap = (Button)layout.findViewById(R.id.turn_to_map);
+
         //设置定位点的状态
         mode = MyLocationConfiguration.LocationMode.FOLLOWING;
         bitmap = null;
@@ -210,8 +206,7 @@ public class MapRunShow extends AppCompatActivity {
         locClient.registerLocationListener(myListener);
         //设置定位Option
         this.setLocationOption();
-        //开启定位服务
-        locClient.start();
+
 
 
         //实体名字
@@ -296,6 +291,7 @@ public class MapRunShow extends AppCompatActivity {
                     baiduMap.clear();
                     traceClient.startGather(null);
                     isFirstTra = false;
+
                 }
             }
         });
@@ -312,6 +308,7 @@ public class MapRunShow extends AppCompatActivity {
                 }
             }
         });
+
         /**
          * 实体监听器  在这里监听设备的运动轨迹，并把合适的轨迹点保存下来，并
          * 设定开启轨迹后的第一个轨迹点的图标，然后画出轨迹的实时路线
@@ -333,7 +330,8 @@ public class MapRunShow extends AppCompatActivity {
                     double distance = getDistance(point, last);
                     if (distance < 80 && distance > 0) {
                         pointList.add(point);
-                        drawRealtimePoint(point, last);
+                        //将这里的每两个点画一次线改为直接将保存下来的坐标集合全部画出来
+                        drawRealtimePoint(pointList);
                     }
                 }
 
@@ -440,18 +438,23 @@ public class MapRunShow extends AppCompatActivity {
     /**
      * 画出实时线路点
      *
-     * @param point
+     * @param pointList
      */
-    private void drawRealtimePoint(LatLng point, LatLng last) {
+    private void drawRealtimePoint(List<LatLng> pointList) {
 
-//           每次画两个点
+/*//           每次画两个点
         List<LatLng> latLngs = new ArrayList<LatLng>();
         latLngs.add(last);
         latLngs.add(point);
         polyline = new PolylineOptions().width(10).color(Color.BLUE).points(latLngs);
-        baiduMap.addOverlay(polyline);
+        baiduMap.addOverlay(polyline);*/
+        if (pointList.size() >= 2 && pointList.size() < 10000) {
+            OverlayOptions ooPolyline = new PolylineOptions().width(10)
+                    .color(ContextCompat.getColor(this, R.color.map_line)).points(pointList);
+            baiduMap.addOverlay(ooPolyline);
+
+
+        }
 
     }
-
-
 }

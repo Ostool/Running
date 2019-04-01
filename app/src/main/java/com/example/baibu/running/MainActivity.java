@@ -53,6 +53,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             case R.id.start_button:
                 pauseButton.setVisibility(View.VISIBLE);
                 beginButton.setVisibility(View.GONE);
+                
+
                 break;
             case R.id.over_button:
                 beginButton.setVisibility(View.VISIBLE);
