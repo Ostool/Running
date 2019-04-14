@@ -1,460 +1,314 @@
 package com.example.baibu.running;
 
-import android.Manifest;
-import android.content.Context;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.Color;
-import android.os.Bundle;
-import android.support.annotation.NonNull;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.view.menu.MenuWrapperFactory;
-import android.telephony.TelephonyManager;
-import android.view.KeyEvent;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.widget.Button;
-import android.widget.Toast;
 
-import com.baidu.location.BDAbstractLocationListener;
-import com.baidu.location.BDLocation;
-import com.baidu.location.BDLocationListener;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Message;
+import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
+
+
 import com.baidu.location.LocationClient;
-import com.baidu.location.LocationClientOption;
-import com.baidu.mapapi.SDKInitializer;
 import com.baidu.mapapi.map.BaiduMap;
 import com.baidu.mapapi.map.BitmapDescriptor;
-import com.baidu.mapapi.map.BitmapDescriptorFactory;
-import com.baidu.mapapi.map.MapPoi;
-import com.baidu.mapapi.map.MapStatus;
+
 import com.baidu.mapapi.map.MapStatusUpdate;
 import com.baidu.mapapi.map.MapStatusUpdateFactory;
 import com.baidu.mapapi.map.MapView;
-import com.baidu.mapapi.map.MarkerOptions;
 import com.baidu.mapapi.map.MyLocationConfiguration;
-import com.baidu.mapapi.map.MyLocationData;
 import com.baidu.mapapi.map.Overlay;
 import com.baidu.mapapi.map.OverlayOptions;
 import com.baidu.mapapi.map.PolylineOptions;
 import com.baidu.trace.LBSTraceClient;
-import com.baidu.trace.Trace;
 import com.baidu.trace.api.entity.LocRequest;
 import com.baidu.trace.api.entity.OnEntityListener;
 import com.baidu.mapapi.model.LatLng;
-import com.baidu.trace.model.LocationMode;
-import com.baidu.trace.model.OnTraceListener;
-import com.baidu.trace.model.PushMessage;
+import com.baidu.trace.api.track.HistoryTrackRequest;
+import com.baidu.trace.api.track.HistoryTrackResponse;
+import com.baidu.trace.api.track.LatestPoint;
+import com.baidu.trace.api.track.LatestPointRequest;
+import com.baidu.trace.api.track.LatestPointResponse;
+import com.baidu.trace.api.track.OnTrackListener;
+import com.baidu.trace.api.track.SupplementMode;
+import com.baidu.trace.api.track.TrackPoint;
+import com.baidu.trace.model.CoordType;
+import com.baidu.trace.model.ProcessOption;
+import com.baidu.trace.model.SortType;
+import com.baidu.trace.model.StatusCodes;
 import com.baidu.trace.model.TraceLocation;
+import com.baidu.trace.model.TransportMode;
+import com.example.baibu.running.utils.BitmapUtil;
+import com.example.baibu.running.utils.CommonUtil;
+import com.example.baibu.running.utils.Constants;
+import com.example.baibu.running.utils.MapUtill;
+import com.example.baibu.running.utils.NetUtil;
 
 import java.util.ArrayList;
 import java.util.List;
-
-import static java.lang.Math.sqrt;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class MapRunShow extends AppCompatActivity {
     private BaiduMap baiduMap = null;
     private MapView mapView = null;
-    private com.baidu.mapapi.model.LatLng ll;
-    private MyLocationConfiguration configuration;
-    private MyLocationConfiguration.LocationMode mode;
-    private BitmapDescriptor bitmap;
-    private boolean enableDiretion;
-    private int accuracyCircleFillColor;
-    private int accuracyCircleStrokeColor;
-    private MyLocationListener myListener;
-    //地图截屏回调接口
-
-
-    private Button startButton;
-    private Button stopButton;
-    private Button turnToMap;
-    private static BitmapDescriptor realTimeBitmap = null;
-    private boolean isFirstLoc = true;
-    private boolean isFirstTra = true;
-    private boolean isFirstTurn =true;
-
     private int tag = 1;
-    private Trace trace;
-    private RefreshThread refreshThread;
-    private OnTraceListener onTraceListener;
     private long serviceId = 210523;
-    private int gatherInterval = 1;
-    private int packInterval = 1 ;
     private String entityName = null;
-    private boolean isNeedStorage = false;
-    private LBSTraceClient traceClient;
-    private LocationClient locClient;
-    private List<LatLng> pointList = null;
-    private OnEntityListener onEntityListener;
-    private static OverlayOptions overlay;//起点图标
-    private static PolylineOptions polyline;
     private LocRequest locRequest = null;
-    private List<String> permissionList;
+    private LatestPointRequest latestPointRequest;
+    private ProcessOption processOption;
+    private List<LatLng> trackPoints;
+    private MyAppLication trackApp;
+    private OnTrackListener onTrackListener;
+    private OnEntityListener onEntityListener;
+    private SharedPreferences trackConf;
 
+    private Bundle bundle;
+    private HistoryTrackRequest historyTrackRequest;
+    private SortType sortType;
+    private boolean isProcession;
+    private SupplementMode supplementMode;
+    private CoordType coordType;
+    private boolean isRealTimeRunning;
+    private MapUtill mapUtill = null;
+    private Timer mTimer;
+    private BaiduMap.OnMapLoadedCallback onMapLoadedCallback;
+    private HandlerThread handlerThread;
+    private Handler childHandler;
+    private boolean queryResult = false;
+    private Handler mMainHandler = new Handler();
 
+    private Handler uiHandler;
+    private static final int MSG_UPDATE_INFO = 0x110;
 
+    /**
+     * 实时定位任务
+     */
+    private RealTimeHandler realTimeHandler = new RealTimeHandler();
+
+    private RealTimeLocRunnable realTimeLocRunnable = null;
 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        //在使用SDK各组件之前初始化context信息，传入ApplicationContext
-        //注意该方法要再setContentView方法之前实现
-        SDKInitializer.initialize(MyAppLication.getContext());
         setContentView(R.layout.map_run_show);
-        permissionList = new ArrayList<>();
-        if (ContextCompat.checkSelfPermission(MapRunShow.this,
-                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            permissionList.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        }
-        if (ContextCompat.checkSelfPermission(MapRunShow.this,
-                Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            permissionList.add(Manifest.permission.READ_PHONE_STATE);
-        }
-        if (ContextCompat.checkSelfPermission(MapRunShow.this,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            permissionList.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
-        }
-        if (!permissionList.isEmpty()) {
-            String[] permissions = permissionList.toArray(new String[permissionList.size()]);
-            ActivityCompat.requestPermissions(MapRunShow.this, permissions, 1);
-        }
         init();
-        initOnEntityListener();
-        initOnStartTraceListener();
+        initListener();
+
 
     }
 
-
+    //实时定位时刻开启，目的：将实施定位点的图标用在实时轨迹线路上展示方向
+    //轨迹线路应增加一个判断，如果轨迹服务没有停止，那么实时轨迹便不会停，那么此时
+    //应该把每一次查询的历史轨迹的终点图标隐藏，当停止轨迹服务时再显现出来
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        switch (requestCode) {
-            case 1:
-                if (grantResults.length > 0) {
-                    for (int result : grantResults) {
-                        if (result != PackageManager.PERMISSION_GRANTED) {
-                            Toast.makeText(this, "必须同意", Toast.LENGTH_SHORT).show();
-                            finish();
-                            return;
-                        }
-                    }
-                } else {
-                    Toast.makeText(this, "未知错误", Toast.LENGTH_SHORT).show();
-                    finish();
-                }
-                break;
-            default:
+    protected void onResume() {
+        super.onResume();
+        if (!trackApp.isTraceStarted){
+            startRealTimeLoc(1);
         }
+        mTimer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                // (1) 使用handler发送消息
+                Message message = new Message();
+                message.what = 0;
+                mHandler.sendMessage(message);
+            }
+        }, 0, 1000);//每隔一秒使用handler发送一下消息,也就是每隔一秒执行一次,一直重复执行
+
     }
 
-    public class MyLocationListener extends BDAbstractLocationListener {
-        @Override
-        public void onReceiveLocation(BDLocation bdLocation) {
-            if (bdLocation == null || baiduMap == null) {
-                return;
-            }
-            MyLocationData locationData = new MyLocationData.Builder()
-                    .latitude(bdLocation.getLatitude())
-                    .longitude(bdLocation.getLongitude())
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+    }
 
-                    .speed(bdLocation.getSpeed())
-                    .direction(bdLocation.getDirection())
-                    .build();
-            baiduMap.setMyLocationData(locationData);
-            if (isFirstLoc) {
-                isFirstLoc = false;
-                ll = new LatLng(bdLocation.getLatitude(),
-                        bdLocation.getLongitude());
-                MapStatusUpdate update = MapStatusUpdateFactory.newLatLngZoom(ll, 18);
-                baiduMap.animateMapStatus(update);
+    @Override
+    protected void onPause() {
+        super.onPause();
+        mTimer.cancel();
+        stopRealTimeLoc();
+        //当切出地图界面是，保存最新的位置信息
+        CommonUtil.saveCurrentLocation(trackApp);
+    }
+
+    private void initListener() {
+
+        //轨迹监听器(用于接收纠偏后实时位置回调)
+        onTrackListener = new OnTrackListener() {
+            @Override
+            public void onLatestPointCallback(LatestPointResponse response) {
+                if (StatusCodes.SUCCESS != response.getStatus()) {
+                    return;
+                }
+                LatestPoint point = response.getLatestPoint();
+                if (null == point || CommonUtil.isZeroPoint(point.getLocation().getLatitude(), point.getLocation()
+                        .getLongitude())) {
+                    return;
+                }
+
+                LatLng currentLatLng = mapUtill.convertTrace2Map(point.getLocation());
+                if (null == currentLatLng) {
+                    return;
+                }
+                CurrentLocation.locTime = point.getLocTime();
+                CurrentLocation.latitude = currentLatLng.latitude;
+                CurrentLocation.longitude = currentLatLng.longitude;
+                if (null != mapUtill) {
+                    mapUtill.updateStatus(currentLatLng, true);
+                }
+            }
+
+            //查看历史轨迹并显示出来
+            @Override
+            public void onHistoryTrackCallback(HistoryTrackResponse historyTrackResponse) {
+                super.onHistoryTrackCallback(historyTrackResponse);
+                List<TrackPoint> points = historyTrackResponse.getTrackPoints();
+                if (points != null) {
+                    for (TrackPoint trackPoint : points) {
+                        if (!CommonUtil.isZeroPoint(trackPoint.getLocation().getLatitude(),
+                                trackPoint.getLocation().getLongitude()))
+                            //将轨迹点转化为地图画图层的LatLng类
+                            trackPoints.add(mapUtill.convertTrace2Map(trackPoint.getLocation()));
+                    }
+                }
+                mapUtill.drawHistoryTrack(baiduMap, trackPoints, sortType);
+            }
+        };
+        onEntityListener = new OnEntityListener() {
+
+            @Override
+            public void onReceiveLocation(TraceLocation location) {
+
+                if (StatusCodes.SUCCESS != location.getStatus() || CommonUtil.isZeroPoint(location.getLatitude(),
+                        location.getLongitude())) {
+                    return;
+                }
+                LatLng currentLatLng = mapUtill.convertTraceLocation2Map(location);
+                if (null == currentLatLng) {
+                    return;
+                }
+                CurrentLocation.locTime = CommonUtil.toTimeStamp(location.getTime());
+                CurrentLocation.latitude = currentLatLng.latitude;
+                CurrentLocation.longitude = currentLatLng.longitude;
+
+                if (null != mapUtill) {
+                    mapUtill.updateStatus(currentLatLng, true);
+                }
+            }
+        };
+
+    }
+
+    private Handler mHandler = new Handler() {
+        @Override
+        public void handleMessage(Message msg) {
+            if (msg.what == 0) {
+                if (trackApp.isTraceStarted) {
+                    //需要执行的代码
+                    trackApp.mClient.queryHistoryTrack(historyTrackRequest, onTrackListener);
+                    trackApp.historyStopTime = System.currentTimeMillis() / 1000;
+                    historyTrackRequest.setEndTime(trackApp.historyStopTime);
+                }
             }
         }
     };
 
 
     private void init() {
+        trackApp = (MyAppLication) getApplicationContext();
         mapView = (MapView) findViewById(R.id.run_map_show);
         baiduMap = mapView.getMap();
-        myListener = new MyLocationListener();
         baiduMap.setMapType(BaiduMap.MAP_TYPE_NORMAL);
         baiduMap.setMyLocationEnabled(true);
-        realTimeBitmap = BitmapDescriptorFactory.fromResource(R.drawable.dog_home);
-        LayoutInflater factory = LayoutInflater.from(MapRunShow.this);
-        View layout = factory.inflate(R.layout.activity_main, null);
-        //记录轨迹开始按钮
-        startButton = (Button) layout.findViewById(R.id.start_button);
-        //结束轨迹记录按钮
-        stopButton = (Button) layout.findViewById(R.id.over_button);
-        turnToMap = (Button)layout.findViewById(R.id.turn_to_map);
-
-        //设置定位点的状态
-        mode = MyLocationConfiguration.LocationMode.FOLLOWING;
-        bitmap = null;
-        enableDiretion = true;
-        accuracyCircleFillColor = 0xAAFFFF88;
-        accuracyCircleStrokeColor = 0xAA00FF00;
-        configuration = new MyLocationConfiguration(mode,enableDiretion,bitmap,
-                accuracyCircleFillColor,accuracyCircleStrokeColor);
-        baiduMap.setMyLocationConfiguration(configuration);
-        //实例化LocationClient
-        locClient = new LocationClient(MyAppLication.getContext());
-        //注册监听函数
-        locClient.registerLocationListener(myListener);
-        //设置定位Option
-        this.setLocationOption();
-
-
-
-        //实体名字
         entityName = "123";
-        //实例化轨迹客服端
-        traceClient = new LBSTraceClient(getApplicationContext());
-        //实例化轨迹服务
-        trace = new Trace(serviceId, entityName, isNeedStorage);
-        //设置位置采集和打包周期
-        traceClient.setInterval(gatherInterval, packInterval);
-        //设置轨迹定位方式
-        traceClient.setLocationMode(LocationMode.High_Accuracy);
-        traceClient.setOnTraceListener(onTraceListener);
+        trackPoints = new ArrayList<LatLng>();
+        mapUtill = new MapUtill();
+        mapUtill.init(mapView);
+        mTimer = new Timer();
 
-        /*realTimeBitmap = BitmapDescriptorFactory.fromResource(R.drawable.dog_home);*/
+
+        trackConf = getSharedPreferences("track_conf", MODE_PRIVATE);
+        coordType = CoordType.bd09ll;
+        supplementMode = SupplementMode.walking;
+        sortType = SortType.asc;
+        latestPointRequest = new LatestPointRequest(Constants.TAG, serviceId, entityName);
+        processOption = new ProcessOption();
+        processOption.setNeedVacuate(true);
+        processOption.setNeedDenoise(true);
+        processOption.setNeedMapMatch(false);
+        processOption.setRadiusThreshold(50);
+        processOption.setTransportMode(TransportMode.walking);
+        latestPointRequest.setProcessOption(processOption);
+
+        bundle = getIntent().getExtras();
+
+        historyTrackRequest = new HistoryTrackRequest(Constants.TAG, serviceId, entityName);
+        processOption = new ProcessOption();
+        processOption.setRadiusThreshold(50);
+        processOption.setTransportMode(TransportMode.walking);
+        processOption.setNeedDenoise(true);
+        processOption.setNeedVacuate(true);
+        historyTrackRequest.setProcessOption(processOption);
+        historyTrackRequest.setSortType(SortType.asc);
+        historyTrackRequest.setCoordTypeOutput(CoordType.bd09ll);
+        historyTrackRequest.setProcessed(true);
+        historyTrackRequest.setStartTime(trackApp.historyStartTime);
+        historyTrackRequest.setEndTime(System.currentTimeMillis() / 1000);
+
+
     }
 
-
-
-    //初始化轨迹监听器
-    private void initOnStartTraceListener() {
-
-
-        onTraceListener = new OnTraceListener() {
-            @Override
-            public void onBindServiceCallback(int i, String s) {
-
-            }
-
-            @Override
-            public void onStartTraceCallback(int i, String s) {
-
-            }
-
-            @Override
-            public void onStopTraceCallback(int i, String s) {
-
-            }
-
-            @Override
-            public void onStartGatherCallback(int i, String s) {
-
-            }
-
-            @Override
-            public void onStopGatherCallback(int i, String s) {
-
-            }
-
-            @Override
-            public void onPushCallback(byte b, PushMessage pushMessage) {
-
-            }
-
-            @Override
-            public void onInitBOSCallback(int i, String s) {
-
-            }
-        };
-    }
-
-    /*//地图截图回调接口
-    private BaiduMap.SnapshotReadyCallback callback = new BaiduMap.SnapshotReadyCallback() {
+    static class RealTimeHandler extends Handler {
         @Override
-        public void onSnapshotReady(Bitmap bitmap) {
-
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
         }
-    };*/
-
-
-    //初始化实体监听器
-    private void initOnEntityListener() {
-
-
-        startButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (isFirstTra) {
-                    //开启轨迹服务
-                    traceClient.startTrace(trace, null);
-                    startRefreshThread(true);
-                    baiduMap.clear();
-                    traceClient.startGather(null);
-                    isFirstTra = false;
-
-                }
-            }
-        });
-        stopButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!isFirstTra) {
-                    isFirstTra = true;
-                    pointList.clear();
-                    baiduMap.clear();
-                    traceClient.stopGather(null);
-                    traceClient.stopTrace(trace,null);
-                    startRefreshThread(false);
-                }
-            }
-        });
-
-        /**
-         * 实体监听器  在这里监听设备的运动轨迹，并把合适的轨迹点保存下来，并
-         * 设定开启轨迹后的第一个轨迹点的图标，然后画出轨迹的实时路线
-         */
-        onEntityListener = new OnEntityListener() {
-
-            @Override
-            public void onReceiveLocation(TraceLocation traceLocation) {
-                super.onReceiveLocation(traceLocation);
-                LatLng point = new LatLng(
-                        traceLocation.getLatitude(), traceLocation.getLongitude());
-                if (pointList.size() == 0) {
-                    overlay = new MarkerOptions().position(point).icon(realTimeBitmap)
-                            .zIndex(9).draggable(true);
-                    baiduMap.addOverlay(overlay);
-                    pointList.add(point);
-                } else {
-                    LatLng last = pointList.get(pointList.size() - 1);
-                    double distance = getDistance(point, last);
-                    if (distance < 80 && distance > 0) {
-                        pointList.add(point);
-                        //将这里的每两个点画一次线改为直接将保存下来的坐标集合全部画出来
-                        drawRealtimePoint(pointList);
-                    }
-                }
-
-            }
-        };
     }
-
 
     /**
-     * 计算两点之间的距离
+     * 实时定位任务
+     *
+     * @author baidu
      */
-    public static double getDistance(LatLng point1, LatLng point2) {
-        double lat1 = point1.latitude * 100000;
-        double lng1 = point1.longitude * 100000;
-        double lat2 = point2.latitude * 100000;
-        double lng2 = point2.longitude * 100000;
-        return sqrt((lat1 - lat2) * (lat1 - lat2) + (lng1 - lng2) * (lng1 - lng2));
-    }
+    class RealTimeLocRunnable implements Runnable {
 
-    private class RefreshThread extends Thread {
+        private int interval = 0;
 
-        protected boolean refresh = true;
+        public RealTimeLocRunnable(int interval) {
+            this.interval = interval;
+        }
 
+        @Override
         public void run() {
-
-            while (refresh) {
-                //用来记录实时轨迹点
-                queryRealtimeTrack();
-                System.out.println("线程更新" + pointList.size());
-                try {
-                    Thread.sleep(packInterval * 1000);
-                } catch (InterruptedException e) {
-                    System.out.println("线程休眠失败");
-                }
+            if (isRealTimeRunning) {
+                trackApp.getCurrentLocation(onEntityListener, onTrackListener);
+                realTimeHandler.postDelayed(this, interval * 1000);
             }
-
         }
     }
 
-    /**
-     * 查询实时线路    这个有什么作用？ 目前的理解：配合刷新进程，获取实时轨迹点
-     * 获取到的点会回馈到实体监听器供使用
-     */
-    private void queryRealtimeTrack() {
-        locRequest = new LocRequest(tag, serviceId);
-        traceClient.queryRealTimeLoc(locRequest, onEntityListener);
+    public void startRealTimeLoc(int interval) {
+        trackApp.isStartRealtimeLoc = true;
+        isRealTimeRunning = true;
+        realTimeLocRunnable = new RealTimeLocRunnable(interval);
+        realTimeHandler.post(realTimeLocRunnable);
     }
 
-    /**
-     * 启动刷新线程
-     *
-     * @param isStart
-     */
-    private void startRefreshThread(boolean isStart) {
-
-        if (refreshThread == null) {
-            refreshThread = new RefreshThread();
+    public void stopRealTimeLoc() {
+        isRealTimeRunning = false;
+        if (null != realTimeHandler && null != realTimeLocRunnable) {
+            realTimeHandler.removeCallbacks(realTimeLocRunnable);
         }
-
-        refreshThread.refresh = isStart;
-
-        if (isStart) {
-            if (!refreshThread.isAlive()) {
-                refreshThread.start();
-            }
-        } else {
-            refreshThread = null;
-        }
-
-    }
-
-    /**
-     *  获取手机识别码
-     */
-    private String getImei(Context context) {
-        String mImei = "NULL";
-        try {
-
-            mImei = ((TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE)).getDeviceId();
-        } catch (SecurityException e) {
-            mImei = "NULL";
-        }
-        return mImei;
-    }
-
-    /**
-     * 设置定位选项
-     */
-    private void setLocationOption() {
-        LocationClientOption option = new LocationClientOption();
-        option.setOpenGps(true);  //打开GPS
-        option.setLocationMode(LocationClientOption.LocationMode.Hight_Accuracy); //设置定位模式
-        option.setCoorType("bd09ll"); //返回的定位结果是百度经纬度默认值gcj02
-        //option.setScanSpan(2000);  //设置发起定位请求的间隔时间为2000ms
-        option.setOpenAutoNotifyMode(); //设置打开自动回调位置模式，该开关打开后，期间只要定位SDK检测到位置变化
-        // 就会主动回调给开发者，该模式下开发者无需再关心定位间隔是多少，定位SDK本身发现位置变化就会及时回调给开发者
-        option.setIsNeedAddress(true);  //返回的定位结果包含地址信息
-        option.setNeedDeviceDirect(true);  //返回的定位结果包含手机机头的方向
-        locClient.setLocOption(option);
-    }
-
-
-
-    /**
-     * 画出实时线路点
-     *
-     * @param pointList
-     */
-    private void drawRealtimePoint(List<LatLng> pointList) {
-
-/*//           每次画两个点
-        List<LatLng> latLngs = new ArrayList<LatLng>();
-        latLngs.add(last);
-        latLngs.add(point);
-        polyline = new PolylineOptions().width(10).color(Color.BLUE).points(latLngs);
-        baiduMap.addOverlay(polyline);*/
-        if (pointList.size() >= 2 && pointList.size() < 10000) {
-            OverlayOptions ooPolyline = new PolylineOptions().width(10)
-                    .color(ContextCompat.getColor(this, R.color.map_line)).points(pointList);
-            baiduMap.addOverlay(ooPolyline);
-
-
-        }
-
+        trackApp.mClient.stopRealTimeLoc();
     }
 }
+
+
+
