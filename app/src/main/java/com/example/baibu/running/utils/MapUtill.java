@@ -41,8 +41,12 @@ public class MapUtill {
     public BaiduMap baiduMap = null;
 
     public LatLng lastPoint = null;
-    private  BitmapUtil bitmapUtil = null;
-    private MyAppLication trackApp = new MyAppLication();
+
+    private boolean isFirstShow = true;
+
+
+
+
 
 
 
@@ -65,6 +69,8 @@ public class MapUtill {
         mapView = view;
         baiduMap = mapView.getMap();
         mapView.showZoomControls(false);
+
+
 
     }
 
@@ -168,28 +174,23 @@ public class MapUtill {
         if (null == baiduMap || null == currentPoint) {
             return;
         }
-
         if (null != baiduMap.getProjection()) {
             Point screenPoint = baiduMap.getProjection().toScreenLocation(currentPoint);
             // 点在屏幕上的坐标超过限制范围，则重新聚焦底图
             if (screenPoint.y < 200 || screenPoint.y > MyAppLication.screenHeight - 500
                     || screenPoint.x < 200 || screenPoint.x > MyAppLication.screenWidth - 200
                     || null == mapStatus) {
-                animateMapStatus(currentPoint, 20.0f);
+                animateMapStatus(currentPoint, 19.0f);
             }
         } else if (null == mapStatus) {
             // 第一次定位时，聚焦底图
-            setMapStatus(currentPoint, 20.0f);
+            setMapStatus(currentPoint, 19.0f);
         }
-
         if (showMarker) {
             addMarker(currentPoint);
         }
 
     }
-
-
-
     /**
      * 添加地图覆盖物
      */
@@ -260,9 +261,9 @@ public class MapUtill {
     /**
      * 绘制历史轨迹
      */
-    public void drawHistoryTrack(BaiduMap baiduMap,List<LatLng> points, SortType sortType) {
+    public void drawHistoryTrack(List<LatLng> points, SortType sortType,boolean isTraceStart,
+                                 MyAppLication myApp) {
         // 绘制新覆盖物前，清空之前的覆盖物
-        baiduMap.clear();
         if (points == null || points.size() == 0) {
             if (null != polylineOverlay) {
                 polylineOverlay.remove();
@@ -293,6 +294,7 @@ public class MapUtill {
                 .position(startPoint).icon(BitmapUtil.bmStart)
                 .zIndex(9).draggable(true);
         // 添加终点图标
+
         OverlayOptions endOptions = new MarkerOptions().position(endPoint)
                 .icon(BitmapUtil.bmEnd).zIndex(9).draggable(true);
 
@@ -300,17 +302,14 @@ public class MapUtill {
         OverlayOptions polylineOptions = new PolylineOptions().width(10)
                 .color(Color.BLUE).points(points);
         baiduMap.addOverlay(startOptions);
+        if (myApp.pressOverButton){
         baiduMap.addOverlay(endOptions);
+        }
         polylineOverlay = baiduMap.addOverlay(polylineOptions);
-        OverlayOptions markerOptions =
-                new MarkerOptions().flat(true).anchor(0.5f, 0.5f).icon(BitmapUtil.bmArrowPoint)
-                        .position(points.get(points.size() - 1))
-                        .rotate((float) CommonUtil.getAngle(points.get(0), points.get(1)));
-        mMoveMarker = (Marker) baiduMap.addOverlay(markerOptions);
-        animateMapStatus(points);
+        animateMapStatus(points,baiduMap);
     }
 
-    public void animateMapStatus(List<LatLng> points) {
+    public void animateMapStatus(List<LatLng> points,BaiduMap baiduMap) {
         if (null == points || points.isEmpty()) {
             return;
         }

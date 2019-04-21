@@ -3,6 +3,7 @@ package com.example.baibu.running;
 import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Message;
@@ -35,12 +36,15 @@ import com.baidu.trace.api.track.HistoryTrackResponse;
 import com.baidu.trace.api.track.LatestPoint;
 import com.baidu.trace.api.track.LatestPointResponse;
 import com.baidu.trace.api.track.OnTrackListener;
+import com.baidu.trace.api.track.SupplementMode;
 import com.baidu.trace.model.OnTraceListener;
 import com.baidu.trace.model.ProcessOption;
 import com.baidu.trace.model.PushMessage;
+import com.baidu.trace.model.StatusCodes;
 import com.baidu.trace.model.TransportMode;
 import com.example.baibu.running.utils.BitmapUtil;
 import com.example.baibu.running.utils.Constants;
+import com.example.baibu.running.utils.PermissionUtils;
 import com.example.baibu.running.utils.QueryRealtimeDistance;
 
 import java.lang.reflect.Method;
@@ -55,11 +59,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private Button overButton;
     private Button continueButton;
     private Button turnToMapButton;
+    private TextView distanceKilomiter;
+    private TextView speed;
     public BaiduMap baiduMap;
     public MapView mapView;
     private Toolbar toolbar;
     private long serviceId = 210523;
-
     private String entityName = "123";
     private List<String> permissionList;
     private OnTrackListener onTrackListener;
@@ -67,71 +72,30 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private SharedPreferences trackConf;
     private SharedPreferences.Editor editor;
     private boolean isTraceStart;
-    private MyAppLication myAppLication;
+    private MyAppLication myApp;
     private DistanceRequest distanceRequest;
     private ProcessOption processOption;
     private int i = 0;
     private long distanceStartTime = 0;
     private long distanceStopTime = 0;
+    private boolean isShowDistance = false;
+    private RealtimeDistanceHandler realtimeDistanceHandler = new RealtimeDistanceHandler();
+    private RealtimeDistance realtimeDistanceRunnable ;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         init();
-        initListener();
-        gainPermissions();
         setSupportActionBar(toolbar);
-        myAppLication.mClient.startTrace(myAppLication.mTrace, onTraceListener);
+        gainPermissions();
+        initListener();
+        myApp.mClient.startTrace(myApp.mTrace,onTraceListener);
     }
-    /**
-     * Handler可以用来更新UI
-     * */
-    private Handler mHanlder = new Handler() {
-        @Override
-        public void handleMessage(Message msg) {
-            switch (msg.what) {
-                case 1:
 
-                    break;
-                default:
-                    break;
-            }
-            super.handleMessage(msg);
-        }
-    };
-
-    private Runnable task = new Runnable() {
-        @Override
-        public void run() {
-            /**
-             * 此处执行任务
-             * */
-            myAppLication.mClient.queryDistance(distanceRequest,onTrackListener);
-            distanceStopTime = System.currentTimeMillis()/1000;
-            distanceRequest.setEndTime(distanceStopTime);
-
-            Log.d("handler", "run: "+i++);
-            mHanlder.sendEmptyMessage(1);
-            mHanlder.postDelayed(this, 4 * 1000);//延迟5秒,再次执行task本身,实现了循环的效果
-        }
-    };
-
-
-
-
-
-
-
-    protected void onResume() {
-        super.onResume();
-        if (myAppLication.isTraceStarted){
-            mHanlder.postDelayed(task, 0);
-        }
-    }
     @Override
-    protected void onPause() {
-        super.onPause();
-        mHanlder.removeCallbacks(task);
+    protected void onDestroy() {
+        super.onDestroy();
+        stopRealtimeDistance();
     }
 
     private void initListener() {
@@ -142,33 +106,31 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             @Override
             public void onStartTraceCallback(int i, String s) {
                 if (i == 0) {
-                    myAppLication.isTraceStarted = true;
-                    if (myAppLication.isTraceStarted){
-                    myAppLication.mClient.startGather(onTraceListener);}
-                    myAppLication.isGatherStarted = true;
                     editor = trackConf.edit();
                     editor.putBoolean("is_gather_started", true);
                     editor.putBoolean("is_trace_started", true);
                     editor.apply();
                     Log.d("123456789", "onStartTraceCallback: " + s.toString());
+                    myApp.mClient.startGather(onTraceListener);
+                    myApp.isGatherStarted = true;
                 }
             }
 
             @Override
             public void onStopTraceCallback(int i, String s) {
-                myAppLication.isGatherStarted = false;
-                myAppLication.isTraceStarted = false;
+                myApp.isGatherStarted = false;
+                myApp.isTraceStarted = false;
                 editor = trackConf.edit();
                 editor.remove("is_trace_started");
                 editor.remove("is_gather_started");
                 editor.apply();
-                myAppLication.clearTraceStatus();
+                myApp.clearTraceStatus();
                 Log.d("123456789", "onStopTraceCallback: " + s.toString());
             }
 
             @Override
             public void onStartGatherCallback(int i, String s) {
-                myAppLication.isGatherStarted = true;
+                myApp.isGatherStarted = true;
                 editor = trackConf.edit();
                 editor.putBoolean("is_gather_started", true);
                 editor.apply();
@@ -177,7 +139,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
             @Override
             public void onStopGatherCallback(int i, String s) {
-                myAppLication.isGatherStarted = false;
+                myApp.isGatherStarted = false;
                 editor = trackConf.edit();
                 editor.remove("is_gather_started");
                 editor.apply();
@@ -200,6 +162,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             @Override
             public void onDistanceCallback(DistanceResponse distanceResponse) {
                 super.onDistanceCallback(distanceResponse);
+                Log.d("historydistance", "onDistanceCallback: "+distanceResponse.getMessage());
+                if (StatusCodes.SUCCESS!=distanceResponse.getStatus()){
+                    return;
+                }
+                double distance = distanceResponse.getDistance();
+                double distanceSpeed = distance/(distanceRequest.getEndTime()-distanceRequest.getStartTime());
+                distanceKilomiter.setText(String.valueOf(distance));
+                speed.setText(String.valueOf(distanceSpeed));
             }
             @Override
             public void onLatestPointCallback(LatestPointResponse latestPointResponse) {
@@ -208,46 +178,58 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         };
 
     }
-
-
     private void gainPermissions() {
-        if (ContextCompat.checkSelfPermission(MainActivity.this,
+
+        if (ContextCompat.checkSelfPermission(this,
                 Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            permissionList.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            ActivityCompat.requestPermissions(MainActivity.this,new String[]{
+                    Manifest.permission.ACCESS_FINE_LOCATION},1);
         }
-        if (ContextCompat.checkSelfPermission(MainActivity.this,
-                Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
-            permissionList.add(Manifest.permission.READ_PHONE_STATE);
+
+        if (ContextCompat.checkSelfPermission(this,
+                Manifest.permission.READ_PHONE_STATE)!=PackageManager.PERMISSION_GRANTED){
+            ActivityCompat.requestPermissions(MainActivity.this,new String[]{
+                    Manifest.permission.READ_PHONE_STATE},3);
+            Log.d("abc", "gainPermissions: "+1234);
         }
-        if (ContextCompat.checkSelfPermission(MainActivity.this,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            permissionList.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+
+        if (ContextCompat.checkSelfPermission(this,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE)!=PackageManager.PERMISSION_GRANTED){
+            ActivityCompat.requestPermissions(MainActivity.this,new String[]{
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE},2);
+            Log.d("abc", "gainPermissions: "+123);
         }
-        if (!permissionList.isEmpty()) {
-            String[] permissions = permissionList.toArray(new String[permissionList.size()]);
-            ActivityCompat.requestPermissions(MainActivity.this, permissions, 1);
-        }
+
+
+
+
     }
-
-
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         switch (requestCode) {
             case 1:
-                if (grantResults.length > 0) {
-                    for (int result : grantResults) {
-                        if (result != PackageManager.PERMISSION_GRANTED) {
-                            Toast.makeText(this, "必须同意", Toast.LENGTH_SHORT).show();
-                            finish();
-                            return;
-                        }
-                    }
+                if (grantResults.length > 0&&grantResults[0]==PackageManager.PERMISSION_GRANTED) {
                 } else {
                     Toast.makeText(this, "未知错误", Toast.LENGTH_SHORT).show();
                     finish();
                 }
+
+            case 2:
+                if (grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED){
+                }else {
+                    Toast.makeText(this, "未知错误", Toast.LENGTH_SHORT).show();
+                    finish();
+                }
                 break;
+            case 3:
+                if (grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED){
+                }else {
+                    Toast.makeText(this, "未知错误", Toast.LENGTH_SHORT).show();
+                    finish();
+                    break;
+                }
             default:
+
         }
     }
 
@@ -259,22 +241,22 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 beginButton.setVisibility(View.GONE);
                 continueButton.setVisibility(View.VISIBLE);
                 overButton.setVisibility(View.VISIBLE);
+                myApp.mClient.stopGather(onTraceListener);
+                stopRealtimeDistance();
                 break;
             case R.id.start_button:
                 pauseButton.setVisibility(View.VISIBLE);
                 beginButton.setVisibility(View.GONE);
-                editor = myAppLication.trackConf.edit();
+                editor = myApp.trackConf.edit();
                 editor.putBoolean("is_track_started", true);
                 editor.putBoolean("is_gather_started", true);
                 editor.apply();
-                distanceStartTime = myAppLication.historyStartTime;
-                distanceStopTime = distanceStartTime;
-                myAppLication.isTraceStarted = true;
-                myAppLication.isGatherStarted = true;
-                myAppLication.historyStartTime = System.currentTimeMillis() / 1000;
-
-
-                mHanlder.postDelayed(task, 0);
+                myApp.pressOverButton = false;
+                myApp.isTraceStarted = true;
+                //此处仅开启轨迹服务，但点击开始按钮后才会开始轨迹采集
+                myApp.distanceStartTime = System.currentTimeMillis()/1000;
+                startRealtimeDistance(2);
+                myApp.pressOverButton = false;
 
                 break;
             case R.id.over_button:
@@ -282,31 +264,74 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 pauseButton.setVisibility(View.GONE);
                 overButton.setVisibility(View.GONE);
                 continueButton.setVisibility(View.GONE);
-                myAppLication.mClient.setOnTraceListener(null);
-                myAppLication.mClient.stopTrace(myAppLication.mTrace, onTraceListener);
-                myAppLication.historyStopTime = System.currentTimeMillis() / 1000;
+                myApp.mClient.setOnTraceListener(null);
+                myApp.mClient.stopGather(onTraceListener);
                 isTraceStart = false;
-                myAppLication.isTraceStarted = false;
-                myAppLication.isGatherStarted = false;
-                editor = myAppLication.trackConf.edit();
+                myApp.isTraceStarted = false;
+                myApp.isGatherStarted = false;
+                editor = myApp.trackConf.edit();
                 editor.remove("is_trace_started");
                 editor.remove("is_gather_started");
                 editor.apply();
-                mHanlder.removeCallbacks(task);
+                myApp.isFirstShow = true;
+                myApp.pressOverButton = true;
+                myApp.historyStopTime = System.currentTimeMillis()/1000;
+                stopRealtimeDistance();
                 break;
             case R.id.continue_button:
                 beginButton.setVisibility(View.GONE);
                 pauseButton.setVisibility(View.VISIBLE);
                 overButton.setVisibility(View.GONE);
                 continueButton.setVisibility(View.GONE);
+                //重新开始轨迹采集
+                myApp.mClient.startGather(onTraceListener);
+                startRealtimeDistance(2);
                 break;
             case R.id.turn_to_map:
-                Bundle bundle1 = new Bundle();
                 Intent intent = new Intent(this, MapRunShow.class);
-                intent.putExtras(bundle1);
+                //如果此时已按了结束按钮，那么停止时间应该是停止按钮记录的时间
+                if (!myApp.pressOverButton){
+                myApp.historyStopTime = System.currentTimeMillis()/1000;
+                }
+                stopRealtimeDistance();
                 startActivity(intent);
             default:
                 break;
+        }
+    }
+
+    class RealtimeDistance implements Runnable{
+        int interval = 0;
+        public RealtimeDistance(int interval){
+            this.interval = interval;
+        }
+        @Override
+        public void run() {
+            if (isShowDistance){
+                myApp.getRealtimeDistance(distanceRequest,onTrackListener);
+                Log.d("historydistance", "startRealtimeDistance: "+isShowDistance);
+                realtimeDistanceHandler.postDelayed(this,interval*1000);
+            }
+        }
+    }
+
+    public void startRealtimeDistance(int interval){
+        isShowDistance = true;
+        realtimeDistanceRunnable = new RealtimeDistance(interval);
+        realtimeDistanceHandler.post(realtimeDistanceRunnable);
+    }
+
+    public void stopRealtimeDistance(){
+        isShowDistance = false;
+        if (realtimeDistanceHandler!=null&&realtimeDistanceRunnable!=null){
+            realtimeDistanceHandler.removeCallbacks(realtimeDistanceRunnable);
+        }
+    }
+
+    static class RealtimeDistanceHandler extends Handler{
+        @Override
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
         }
     }
 
@@ -331,7 +356,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
     private void init() {
         BitmapUtil.init();
-        myAppLication = (MyAppLication) getApplicationContext();
+        myApp = (MyAppLication) getApplicationContext();
+        myApp.getScreenSize();
         trackConf = getSharedPreferences("track_conf", MODE_PRIVATE);
         distanceRequest = new DistanceRequest(Constants.TAG, serviceId, entityName);
         distanceRequest.setProcessed(true);
@@ -339,8 +365,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         processOption.setNeedDenoise(true);
         processOption.setNeedVacuate(true);
         processOption.setTransportMode(TransportMode.walking);
+        //距离请求参数设置
         distanceRequest.setProcessOption(processOption);
 
+        distanceRequest.setSupplementMode(SupplementMode.no_supplement);
         LayoutInflater factorys = LayoutInflater.from(MainActivity.this);
         View view = factorys.inflate(R.layout.map_run_show, null);
         mapView = (MapView) view.findViewById(R.id.run_map_show);
@@ -357,9 +385,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         beginButton.setOnClickListener(this);
         pauseButton.setOnClickListener(this);
         permissionList = new ArrayList<>();
+        distanceKilomiter = (TextView)findViewById(R.id.textView2);
+        speed = (TextView)findViewById(R.id.textView5);
     }
 }
-
-
-
-

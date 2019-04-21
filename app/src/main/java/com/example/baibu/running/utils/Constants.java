@@ -3,6 +3,7 @@ package com.example.baibu.running.utils;
 public final class Constants {
     public static final int TAG = 9;
     public static final int UPDATE_DISTANCE = 2;
+    public static final int UPDATE_HISTORY_TRACK = 3;
 
     public static final int REQUEST_CODE = 1;
 
@@ -30,12 +31,12 @@ public final class Constants {
     /**
      * 默认采集周期
      */
-    public static final int DEFAULT_GATHER_INTERVAL = 1;
+    public static final int DEFAULT_GATHER_INTERVAL = 5;
 
     /**
      * 默认打包周期
      */
-    public static final int DEFAULT_PACK_INTERVAL = 1;
+    public static final int DEFAULT_PACK_INTERVAL = 6;
 
     /**
      * 实时定位间隔(单位:秒)

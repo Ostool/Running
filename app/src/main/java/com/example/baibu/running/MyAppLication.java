@@ -17,6 +17,7 @@ import com.baidu.trace.LBSTraceClient;
 import com.baidu.trace.Trace;
 import com.baidu.trace.api.entity.LocRequest;
 import com.baidu.trace.api.entity.OnEntityListener;
+import com.baidu.trace.api.track.DistanceRequest;
 import com.baidu.trace.api.track.LatestPointRequest;
 import com.baidu.trace.api.track.OnTrackListener;
 import com.baidu.trace.model.BaseRequest;
@@ -37,14 +38,13 @@ public class MyAppLication extends Application {
     private AtomicInteger mSequenceGenerator = new AtomicInteger();
 
     private LocRequest locRequest = null;
-
+    public boolean isFirstShow = true;
+    public boolean pressOverButton = false;
     private Notification notification = null;
-
     public Context mContext = null;
     public long historyStartTime = 0;
     public long historyStopTime = 0;
-
-
+    public long distanceStartTime = 0;
 
     public SharedPreferences trackConf = null;
 
@@ -61,14 +61,12 @@ public class MyAppLication extends Application {
     /**
      * 轨迹服务ID
      */
-    public long serviceId = 0;
+    public static final long serviceId = 210523;
 
     /**
      * Entity标识
      */
     public String entityName = null;
-
-    public boolean isRegisterReceiver = false;
 
     public boolean isNeedObjectStorage = false;
 
@@ -76,9 +74,6 @@ public class MyAppLication extends Application {
      * 服务是否开启标识
      */
     public boolean isTraceStarted = false;
-
-    public boolean isStartRealtimeLoc = false;
-
 
     /**
      * 采集是否开启标识
@@ -94,24 +89,17 @@ public class MyAppLication extends Application {
         super.onCreate();
         mContext = getApplicationContext();
         entityName = "123";
-        serviceId = 210523;
-
         /*// 若为创建独立进程，则不初始化成员变量
         if ("com.baidu.track:remote".equals(CommonUtil.getCurProcessName(mContext))) {
             return;
         }*/
-
         SDKInitializer.initialize(mContext);
-
-        initNotification();
         mClient = new LBSTraceClient(mContext);
         mTrace = new Trace(serviceId, entityName,isNeedObjectStorage);
         mTrace.setNotification(notification);
-
         trackConf = getSharedPreferences("track_conf", MODE_PRIVATE);
         locRequest = new LocRequest(serviceId);
         mClient.setInterval(Constants.DEFAULT_GATHER_INTERVAL,Constants.DEFAULT_PACK_INTERVAL);
-
         mClient.setOnCustomAttributeListener(new OnCustomAttributeListener() {
             @Override
             public Map<String, String> onTrackAttributeCallback() {
@@ -120,7 +108,6 @@ public class MyAppLication extends Application {
                 map.put("key2", "value2");
                 return map;
             }
-
             @Override
             public Map<String, String> onTrackAttributeCallback(long locTime) {
                 System.out.println("onTrackAttributeCallback, locTime : " + locTime);
@@ -130,10 +117,8 @@ public class MyAppLication extends Application {
                 return map;
             }
         });
-
         clearTraceStatus();
     }
-
     /**
      * 获取当前位置
      */
@@ -155,30 +140,20 @@ public class MyAppLication extends Application {
             mClient.queryRealTimeLoc(locRequest, entityListener);
         }
     }
-    @TargetApi(16)
-    private void initNotification() {
-        Notification.Builder builder = new Notification.Builder(this);
-        Intent notificationIntent = new Intent(this, MapRunShow.class);
 
-        Bitmap icon = BitmapFactory.decodeResource(this.getResources(),
-                R.mipmap.ic_launcher);
-
-        // 设置PendingIntent
-        builder.setContentIntent(PendingIntent.getActivity(this, 0, notificationIntent, 0))
-                .setLargeIcon(icon)  // 设置下拉列表中的图标(大图标)
-                .setContentTitle("百度鹰眼") // 设置下拉列表里的标题
-                .setSmallIcon(R.mipmap.ic_launcher_round) // 设置状态栏内的小图标
-                .setContentText("服务正在运行...") // 设置上下文内容
-                .setWhen(System.currentTimeMillis()); // 设置该通知发生的时间
-
-        notification = builder.build(); // 获取构建好的Notification
-
+    public void getRealtimeDistance(DistanceRequest distanceRequest,OnTrackListener onTrackListener){
+        if (NetUtil.isNetworkAvailable(mContext)&&isTraceStarted&&isGatherStarted){
+            distanceRequest.setStartTime(distanceStartTime);
+            distanceRequest.setEndTime(System.currentTimeMillis()/1000);
+            mClient.queryDistance(distanceRequest,onTrackListener);
+        }
     }
+
 
     /**
      * 获取屏幕尺寸
      */
-    private void getScreenSize() {
+    public void getScreenSize() {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         screenHeight = dm.heightPixels;
         screenWidth = dm.widthPixels;
@@ -217,6 +192,9 @@ public class MyAppLication extends Application {
         return mSequenceGenerator.incrementAndGet();
     }
 
+    public static Context getContext(){
+        return getContext();
+    }
 
 
 }

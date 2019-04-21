@@ -6,10 +6,10 @@
         android:id="@+id/set_one"
         android:icon="@drawable/share_png"
         android:title="设置一"
-        app:showAsAction="never" />
+        app:showAsAction="always" />
     <item
         android:id="@+id/set_two"
         android:icon="@drawable/help_png"
         android:title="设置二"
-        app:showAsAction="never" />
+        app:showAsAction="always" />
 </menu>

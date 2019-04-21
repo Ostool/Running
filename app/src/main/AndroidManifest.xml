@@ -19,12 +19,14 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     //SD卡读取权限，用于写入对象存储BOS数据
     <uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     //
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     //用于加快GPS首次定位
     <uses-permission android:name="android.permission.ACCESS_LOCATION_EXTRA_COMMANDS" />
     //用于Android M及以上系统，申请加入忽略电池优化白名单
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
 
     <application
         android:name=".MyAppLication"
@@ -40,7 +42,7 @@
 
         <activity
             android:name=".MainActivity"
-            android:label=""
+            android:label="很牛逼"
             android:screenOrientation="userPortrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
